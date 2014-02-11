@@ -52,30 +52,30 @@ setMethod("calculateDiffMethDSS", "methylBase",
         }
 )
 
-methylBaseToBSeq<-function(meth, use_samples=NULL, use_sites=NULL, remove.na=TRUE ) {
-  
-  #require(methylKit)
-  #require(DSS)
-  require(bsseq)
-  
-  if (is.null(use_samples)) use_samples=1:length(meth@sample.ids)
-  
-  if (is.null(use_sites)) use_sites=1:(dim(meth)[[1]])
-
-  cur_data=getData(select(meth, use_sites))
-    
-  if (remove.na) cur_data=na.omit(cur_data)
-  
-  M=as.matrix(cur_data [ , as.character(   lapply( use_samples, function (x) paste0('numCs',x)  ) )]  )
-  Cov=as.matrix(cur_data [ , as.character(   lapply( use_samples, function (x) paste0('coverage',x)  ) )]  )
-  
-  pos=cur_data$start
-  
-  chr=cur_data$chr
-  
-  BS1<-BSseq( M=M, Cov=Cov, pos=pos, chr=chr)
-  BS1
-}
+#methylBaseToBSeq<-function(meth, use_samples=NULL, use_sites=NULL, remove.na=TRUE ) {
+#  
+#  #require(methylKit)
+#  #require(DSS)
+#  require(bsseq)
+#  
+#  if (is.null(use_samples)) use_samples=1:length(meth@sample.ids)
+#  
+#  if (is.null(use_sites)) use_sites=1:(dim(meth)[[1]])
+#
+#  cur_data=getData(select(meth, use_sites))
+#    
+#  if (remove.na) cur_data=na.omit(cur_data)
+#  
+#  M=as.matrix(cur_data [ , as.character(   lapply( use_samples, function (x) paste0('numCs',x)  ) )]  )
+#  Cov=as.matrix(cur_data [ , as.character(   lapply( use_samples, function (x) paste0('coverage',x)  ) )]  )
+#  
+#  pos=cur_data$start
+#  
+#  chr=cur_data$chr
+#  
+#  BS1<-BSseq( M=M, Cov=Cov, pos=pos, chr=chr)
+#  BS1
+#}
 
 
 #####################################################################
@@ -148,7 +148,7 @@ callDML <- function(BS1, BS2, equal.disp=FALSE, threshold=0) {
 }
 
 
-
+# @param mbase methylBase object
 callDML2 <- function(mbase, equal.disp=FALSE, threshold=0) {
   ## first merge data from two conditions according to chr and pos
   cat('Using internal DSS code...', '\n')
@@ -159,6 +159,10 @@ callDML2 <- function(mbase, equal.disp=FALSE, threshold=0) {
   x2 = as.matrix(getData(mbase)[mbase@numCs.index[mbase@treatment==1]])
 
   gr1 <-as(mbase,"GRanges")[,0] ;  gr2 <- gr1
+  
+  # this could be improved, we can avoid the whole merge step
+  # as mbase is already merged, and takes time on big data sets
+  # we can just use cbind() 
   alldata <- mergeData.counts(n1, x1, gr1, n2, x2, gr2)
   
   
