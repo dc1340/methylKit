@@ -16,14 +16,20 @@ setMethod("calculateDiffMethDSS", "methylBase",
             #treatment=meth@treatment,destranded=meth@destranded,resolution=meth@resolution)
   
             sample_indices=1:length(meth@sample.ids)
-            BS1=methylBaseToBSeq(meth, use_samples=sample_indices[meth@treatment==0])
-            BS2=methylBaseToBSeq(meth, use_samples=sample_indices[meth@treatment!=0])
+            #BS1=methylBaseToBSeq(meth, use_samples=sample_indices[meth@treatment==0])
+            #BS2=methylBaseToBSeq(meth, use_samples=sample_indices[meth@treatment!=0])
             
-            raw_output=callDML(BS2, BS1)
+            if(length(unique(meth@treatment)) > 2){
+                    warning("altering 'treatment' condition.\ncalculateDiffMethDSS() works with two groups only ")
+                    meth@treatment[meth@treatment!=0]=1
+            }
+            
+            raw_output=callDML2(meth)
+            
             
             #ids=paste(raw_output[ , 'chr'] , raw_output[, 'pos'], sep='.')
             #raw_output$id=ids
-            raw_output=raw_output[ with(raw_output, order(chr, pos) ), ]
+            #raw_output=raw_output[ with(raw_output, order(chr, pos) ), ]
             raw_output$strand=getData(meth)$strand
             
             output=raw_output[, c('chr', 'pos', 'pos', 'strand', 'pval', 'fdr', 'diff')]
@@ -31,10 +37,10 @@ setMethod("calculateDiffMethDSS", "methylBase",
             colnames(output)=c('chr', 'start', 'end', 'strand', 'pvalue', 'qvalue', 'meth.diff')
             
             
-            if (slim) {
+            if(slim) {
               cat('Trying SLIM...', '\n')
-              slimObj=SLIMfunc(raw_output[ , 'pval'])
-              output$qvalue=QValuesfun(raw_output[ , 'pval'], slimObj$pi0_Est)
+              slimObj=SLIMfunc(raw_output[ , 'pvalue'])
+              output$qvalue=QValuesfun(raw_output[ , 'pvalue'], slimObj$pi0_Est)
               
             }
             
@@ -80,7 +86,7 @@ methylBaseToBSeq<-function(meth, use_samples=NULL, use_sites=NULL, remove.na=TRU
 ######################################################################
 ## a list of functions for DML/DMR detections from Bisulfite seq data
 ######################################################################
-require(bsseq)
+#require(bsseq)
 
 ######################################
 ## wrapper function to calling DML. 
@@ -140,6 +146,71 @@ callDML <- function(BS1, BS2, equal.disp=FALSE, threshold=0) {
   #return(result[ix,])
   return(result[ ,])
 }
+
+
+
+callDML2 <- function(mbase, equal.disp=FALSE, threshold=0) {
+  ## first merge data from two conditions according to chr and pos
+  cat('Using internal DSS code...', '\n')
+  n1 = as.matrix(getData(mbase)[mbase@coverage.index[mbase@treatment==0]])
+  x1 = as.matrix(getData(mbase)[mbase@numCs.index[mbase@treatment==0]])
+  
+  n2 = as.matrix(getData(mbase)[mbase@coverage.index[mbase@treatment==1]])
+  x2 = as.matrix(getData(mbase)[mbase@numCs.index[mbase@treatment==1]])
+
+  gr1 <-as(mbase,"GRanges")[,0] ;  gr2 <- gr1
+  alldata <- mergeData.counts(n1, x1, gr1, n2, x2, gr2)
+  
+  
+  ## estimate priors from counts.
+  if(equal.disp) {
+    ## assume equal dispersion in two conditions. Combine counts from two conditions and estimate dispersions.
+    ## Should keep only those sites didn't show much differences??
+    ## I'll ignore that part for now. 
+    ix.X <- grep("X", colnames(alldata))
+    x1 <- alldata[,ix.X]
+    ix.N <- grep("N", colnames(alldata))
+    n1 <- alldata[,ix.N]
+    prior1 <- est.prior.logN(x1, n1)
+    prior2 <- 0
+  } else { # different prior for two conditions
+    n1 = as.matrix(getData(mbase)[mbase@coverage.index[mbase@treatment==0]])
+    x1 = as.matrix(getData(mbase)[mbase@numCs.index[mbase@treatment==0]])
+    prior1 <- est.prior.logN(x1, n1)
+   
+    n2 = as.matrix(getData(mbase)[mbase@coverage.index[mbase@treatment==1]])
+    x2 = as.matrix(getData(mbase)[mbase@numCs.index[mbase@treatment==1]])
+    prior2 <- est.prior.logN(x2, n2)
+  }
+  
+  ## grab data 
+  cc <- colnames(alldata)
+  ix.X1 <- grep("X.*cond1", cc);
+  ix.N1 <- grep("N.*cond1", cc)
+  ix.X2 <- grep("X.*cond2", cc);
+  ix.N2 <- grep("N.*cond2", cc)
+  ncol1 <- length(ix.X1); ncol2 <- length(ix.X2)
+  x1 <- as.matrix(alldata[,ix.X1]); n1 <- as.matrix(alldata[,ix.N1])
+  x2 <- as.matrix(alldata[,ix.X2]); n2 <- as.matrix(alldata[,ix.N2])
+  
+  ## compute means. Spatial correlations are ignored at this time
+  ## the means need to be of the same dimension as X and N
+  estprob1 <- compute.mean(x1, n1);   estprob2 <- compute.mean(x2, n2)
+  
+  ## perform Wald test 
+  wald <- waldTest.DML(x1, n1, estprob1, x2, n2, estprob2,
+                       prior1, prior2, threshold, equal.disp=equal.disp)
+  
+  ## combine with chr/pos and output
+  result <- data.frame(chr=alldata$chr, pos=alldata$pos, wald)
+  
+  ## sort result according to chr and pos
+  #ix <- sortPos(alldata$chr, alldata$pos)
+  
+  #return(result[ix,])
+  return(result)
+}
+
 
 
 ###############################################################################
